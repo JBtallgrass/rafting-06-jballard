@@ -157,7 +157,7 @@ NEGATIVE_COMMENTS = [
 UNIQUE_POSITIVE_COMMENTS = list(set(POSITIVE_COMMENTS))
 UNIQUE_NEGATIVE_COMMENTS = list(set(NEGATIVE_COMMENTS))
 
-def generate_rafting_feedback(output_file="data/all_rafting_remarks_large.json"):
+def generate_rafting_feedback(output_file="data/all_rafting_remarks.json"):
     """
     Generate and save rafting customer feedback.
 
