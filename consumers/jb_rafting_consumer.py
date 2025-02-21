@@ -1,6 +1,7 @@
 import os
 import json
 import time
+import sqlite3
 from collections import defaultdict
 from datetime import datetime
 from kafka import KafkaConsumer
@@ -13,14 +14,9 @@ matplotlib.use("TkAgg")
 import sys
 import pathlib
 
-# Add the 'consumers' directory to the Python path
-sys.path.append(str(pathlib.Path(__file__).parent))
-
-# Now import the database functions
-from consumers.db_sqlite_rafting import insert_feedback
-from utils.utils_config import get_sqlite_path  # Import this to fetch the database path
-from utils.utils_logger import logger
-
+# Logging
+import logging
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
 #####################################
 # Load Environment Variables
@@ -32,11 +28,44 @@ KAFKA_BROKER = os.getenv("KAFKA_BROKER", "localhost:9092")
 KAFKA_TOPIC = os.getenv("RAFTING_TOPIC", "rafting_feedback")
 
 if not KAFKA_BROKER or not KAFKA_TOPIC:
-    logger.critical("❌ Missing required environment variables.")
+    logging.critical("❌ Missing required environment variables.")
     raise EnvironmentError("Missing required environment variables.")
 
 #####################################
-# Initialize Tracking Data
+# Database Initialization
+#####################################
+
+DB_PATH = "rafting_feedback.db"
+
+def initialize_database():
+    """Creates the SQLite database and table if not exists."""
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS rafting_feedback (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            date TEXT,
+            guide TEXT,
+            comment TEXT,
+            is_negative INTEGER,
+            trip_type TEXT,
+            river_flow INTEGER,
+            water_temperature INTEGER,
+            rapid_difficulty TEXT,
+            river_condition TEXT,
+            timestamp TEXT
+        )
+    """)
+    
+    conn.commit()
+    conn.close()
+    logging.info("✅ Database initialized successfully.")
+
+initialize_database()
+
+#####################################
+# Kafka Consumer Data Handling
 #####################################
 
 data_buffer = []
@@ -44,11 +73,42 @@ guide_feedback = defaultdict(lambda: {"positive": 0, "negative": 0})
 weekly_feedback = defaultdict(lambda: {"positive": 0, "negative": 0})
 negative_feedback_log = []
 
+def insert_feedback_into_db(message):
+    """Inserts feedback data into the SQLite database."""
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+
+        cursor.execute("""
+            INSERT INTO rafting_feedback 
+            (date, guide, comment, is_negative, trip_type, river_flow, water_temperature, rapid_difficulty, river_condition, timestamp) 
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            message.get("date", "unknown"),
+            message.get("guide", "unknown"),
+            message.get("comment", "No comment provided"),
+            int(message.get("is_negative", False)),  # Convert boolean to integer (0 = positive, 1 = negative)
+            message.get("trip_type", "unknown"),
+            message.get("river_flow", 0),
+            message.get("water_temperature", 0),
+            message.get("rapid_difficulty", "unknown"),
+            message.get("river_condition", "unknown"),
+            message.get("timestamp", datetime.utcnow().isoformat())
+        ))
+
+        conn.commit()
+        conn.close()
+        logging.info(f"📥 Data inserted into SQLite for guide: {message.get('guide')}")
+    
+    except Exception as e:
+        logging.error(f"❌ Error inserting feedback into database: {e}")
+
 #####################################
 # Message Processing
 #####################################
 
 def process_message(message):
+    """Processes incoming Kafka messages and updates tracking data."""
     try:
         guide = message.get("guide", "unknown")
         comment = message.get("comment", "No comment provided")
@@ -64,26 +124,26 @@ def process_message(message):
         if is_negative:
             negative_feedback_log.append(message)
 
-       # ✅ Use `get_sqlite_path()` to get the database path
-        db_path = get_sqlite_path()  
+        insert_feedback_into_db(message)  # Store message in SQLite
         
-        # ✅ Pass `db_path` when calling `insert_feedback`
-        insert_feedback(message, db_path)  
+        logging.info(f"📝 Feedback ({trip_date}) | Guide: {guide} | Comment: {comment}")
 
-        logger.info(f"📝 Feedback ({trip_date}) | Guide: {guide} | Comment: {comment}")
     except Exception as e:
-        
-        logger.error(f"❌ Error processing message: {e}")
+        logging.error(f"❌ Error processing message: {e}")
 
 #####################################
 # Real-Time Visualization
 #####################################
 
 def update_chart(frame):
-    if not data_buffer:
+    """Fetches data from SQLite and updates visualization in real-time."""
+    conn = sqlite3.connect(DB_PATH)
+    df = pd.read_sql_query("SELECT * FROM rafting_feedback", conn)
+    conn.close()
+
+    if df.empty:
         return
 
-    df = pd.DataFrame(data_buffer)
     df["date"] = pd.to_datetime(df["date"], errors="coerce")
     df["week"] = df["date"].dt.isocalendar().week
 
@@ -124,7 +184,7 @@ def plot_guide_performance(df):
     plt.xticks(rotation=45)
 
 def plot_negative_feedback_trend(df):
-    negative_feedback = df[df['is_negative']].copy()
+    negative_feedback = df[df['is_negative'] == 1].copy()
     negative_feedback.groupby('date').size().plot(kind='line', ax=plt.gca())
     plt.title("Daily Negative Feedback Trend")
     plt.xlabel("Date")
@@ -142,12 +202,13 @@ def plot_sentiment_distribution(df):
 #####################################
 
 def main():
-    logger.info("🚀 Starting jb_rafting_consumer.")
+    logging.info("🚀 Starting Kafka consumer for rafting feedback.")
+    
     consumer = KafkaConsumer(
         KAFKA_TOPIC,
         bootstrap_servers=KAFKA_BROKER,
         auto_offset_reset="earliest",
-        group_id="jb_rafting_group",
+        group_id="rafting_consumer_group",
         value_deserializer=lambda x: json.loads(x.decode("utf-8"))
     )
 
@@ -166,9 +227,9 @@ def main():
 
             time.sleep(0.5)
     except KeyboardInterrupt:
-        logger.warning("⚠️ Consumer interrupted by user.")
+        logging.warning("⚠️ Consumer interrupted by user.")
     except Exception as e:
-        logger.error(f"❌ Error in Kafka consumer: {e}")
+        logging.error(f"❌ Error in Kafka consumer: {e}")
     finally:
         plt.show()
         consumer.close()
