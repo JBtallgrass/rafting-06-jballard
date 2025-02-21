@@ -1,65 +1,133 @@
-import json
+import os
+import sys
 import time
-import random
-from datetime import datetime
-from confluent_kafka import Producer
-from utils_generate_weather_data import generate_weather_data
-from utils_generate_river_flow import generate_river_flow_data
-from utils_generate_rafting_data import generate_rafting_feedback
-import logging
+import pathlib
+import json
+import subprocess
+from dotenv import load_dotenv
 
-# Kafka Configuration
-KAFKA_BROKER = "localhost:9092"  # Update with actual broker address
-RAFTING_TOPIC = "rafting_feedback"
+# Import Kafka utilities
+from utils.utils_producer import (
+    verify_services,
+    create_kafka_producer,
+    create_kafka_topic,
+)
+from utils.utils_logger import logger
 
-# Set up logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+#####################################
+# Function to Run Data Generators
+#####################################
 
-# Create Kafka producer
-producer = Producer({"bootstrap.servers": KAFKA_BROKER})
+def run_data_generators():
+    """
+    Run all data generation scripts from the `utils/` folder before starting Kafka producer.
+    """
+    scripts = [
+        "utils_generate_rafting_data.py",
+        "utils_generate_river_flow.py",
+        "utils_generate_weather_data.py"
+    ]
 
-def delivery_report(err, msg):
-    """Callback for Kafka message delivery"""
-    if err is not None:
-        logging.error(f"Message delivery failed: {err}")
-    else:
-        logging.info(f"Message delivered to {msg.topic()} [{msg.partition()}]")
+    # Define the correct directory where the scripts are located
+    utils_folder = pathlib.Path(__file__).parent.parent.joinpath("utils")  # Move up one level, then into 'utils'
 
-def load_data():
-    """Load data from utilities."""
-    weather_data_path = generate_weather_data()
-    river_data_path = generate_river_flow_data()
-    feedback_data_path = generate_rafting_feedback()
+    for script in scripts:
+        script_path = utils_folder.joinpath(script)  # Adjusted path
 
-    with open(weather_data_path, "r") as w_file:
-        weather_data = json.load(w_file)
-    with open(river_data_path, "r") as r_file:
-        river_data = json.load(r_file)
-    with open(feedback_data_path, "r") as f_file:
-        feedback_data = json.load(f_file)
-    
-    return weather_data, river_data, feedback_data
+        if script_path.exists():
+            logger.info(f"Running data generator: {script_path}")
+            try:
+                subprocess.run(["python", str(script_path)], check=True)
+                logger.info(f"✅ Data generation successful: {script}")
+            except subprocess.CalledProcessError as e:
+                logger.error(f"❌ Failed to generate data from {script}: {e}")
+                sys.exit(1)  # Exit if a script fails
+        else:
+            logger.error(f"❌ Script not found: {script_path}. Exiting.")
+            sys.exit(1)  # Exit if the script is missing
 
-def stream_data():
-    """Continuously stream rafting data to Kafka."""
-    weather_data, river_data, feedback_data = load_data()
-    max_records = min(len(weather_data), len(river_data), len(feedback_data))
-    
-    for i in range(max_records):
-        message = {
-            "date": weather_data[i]["date"],
-            "weather": weather_data[i],
-            "river": river_data[i],
-            "customer_feedback": feedback_data[i]
-        }
-        
-        message_json = json.dumps(message)
-        producer.produce(RAFTING_TOPIC, message_json.encode("utf-8"), callback=delivery_report)
-        producer.flush()
-        
-        logging.info(f"Published message {i+1}/{max_records}")
-        time.sleep(random.uniform(1, 3))  # Simulating real-time streaming
+#####################################
+# Load Environment Variables
+#####################################
+
+load_dotenv()
+
+#####################################
+# Set up Paths
+#####################################
+
+PROJECT_ROOT = pathlib.Path(__file__).parent.parent  # Go one level up
+DATA_FOLDER: pathlib.Path = PROJECT_ROOT.joinpath("data")
+DATA_FILE: pathlib.Path = DATA_FOLDER.joinpath("all_rafting_remarks.json")
+
+#####################################
+# Main Function
+#####################################
+
+def main():
+    """
+    Main entry point for the producer:
+    - Runs all data generation scripts.
+    - Ensures Kafka topic exists.
+    - Creates Kafka producer.
+    - Streams messages from JSON file to Kafka.
+    """
+
+    logger.info("🚀 START: Rafting Producer")
+
+    # Step 1: Run all data generators **before** Kafka starts
+    run_data_generators()
+
+    # Step 2: Verify Kafka Services
+    verify_services()
+
+    # Step 3: Get Kafka topic and message interval
+    topic = os.getenv("RAFTING_TOPIC", "rafting_feedback")
+    interval_secs = int(os.getenv("RAFTING_INTERVAL_SECONDS", 2))
+
+    # Step 4: Verify the JSON data file exists
+    if not DATA_FILE.exists():
+        logger.error(f"❌ Data file not found: {DATA_FILE}. Exiting.")
+        sys.exit(1)
+
+    # Step 5: Create Kafka producer
+    producer = create_kafka_producer(
+        value_serializer=lambda x: json.dumps(x).encode("utf-8")
+    )
+    if not producer:
+        logger.error("❌ Failed to create Kafka producer. Exiting...")
+        sys.exit(3)
+
+    # Step 6: Create Kafka topic if it doesn’t exist
+    try:
+        create_kafka_topic(topic)
+        logger.info(f"✅ Kafka topic '{topic}' is ready.")
+    except Exception as e:
+        logger.error(f"❌ Failed to create topic '{topic}': {e}")
+        sys.exit(1)
+
+    # Step 7: Stream messages to Kafka
+    try:
+        with open(DATA_FILE, "r", encoding="utf-8") as json_file:
+            json_data = json.load(json_file)
+
+            for message_dict in json_data:
+                producer.send(topic, value=message_dict)
+                logger.info(f"📨 Sent message to Kafka: {message_dict}")
+                time.sleep(interval_secs)
+    except KeyboardInterrupt:
+        logger.warning("⛔ Producer interrupted by user.")
+    except Exception as e:
+        logger.error(f"❌ Error during message production: {e}")
+    finally:
+        producer.close()
+        logger.info("🔻 Kafka producer closed.")
+
+    logger.info("✅ END: Rafting Producer")
+
+#####################################
+# Conditional Execution
+#####################################
 
 if __name__ == "__main__":
-    logging.info("Starting Rafting Producer...")
-    stream_data()
+    main()
