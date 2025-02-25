@@ -47,7 +47,10 @@ This project is designed to **stream, process, and analyze real-time customer fe
 The data in this project is **fictitious** with the use of  **Generative AI (GenAI)** assistants to **generate, problem-solve, and debug** the process.
 
 --- 
-### Project Findings [Rafting Project analysis](C:\Users\balla\Projects\rafting-06-jballard\docs\findings_rafting.md)
+### Project Findings 
+
+[Rafting Project analysis](docs/findings_rafting.md)
+
 
 ---
 
@@ -60,7 +63,9 @@ The data in this project is **fictitious** with the use of  **Generative AI (Gen
 ### 🚣 Data Sources  
 - **Customer Feedback**: Reviews from rafting trip participants.  
 - **Weather Conditions**: Temperature, wind speed, and precipitation.  
+- [weather details](doc/wx-rafting.md)
 - **River Flow Levels**: Water level, current speed, and temperature.  
+- [river details](doc/rv-rafting.md)
 
 ### ⚡ Technologies Used  
 - **Apache Kafka**: Real-time message streaming and processing.  
@@ -194,7 +199,7 @@ Here’s the workflow for the project:
 
 ---
 ### Module 7: Final consumer implementations
-[Final consumer modification](docs\mod7-final-consumer-update.md)
+[Final consumer modification](docs/mod7-final-consumer-update.md)
 
 ---
 
