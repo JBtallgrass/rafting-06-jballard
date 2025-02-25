@@ -63,9 +63,9 @@ The data in this project is **fictitious** with the use of  **Generative AI (Gen
 ### 🚣 Data Sources  
 - **Customer Feedback**: Reviews from rafting trip participants.  
 - **Weather Conditions**: Temperature, wind speed, and precipitation.  
-- [weather details](doc/wx-rafting.md)
+  - [weather details](docs/wx-rafting.md)
 - **River Flow Levels**: Water level, current speed, and temperature.  
-- [river details](doc/rv-rafting.md)
+  - [river details](docs/rv-rafting.md)
 
 ### ⚡ Technologies Used  
 - **Apache Kafka**: Real-time message streaming and processing.  
