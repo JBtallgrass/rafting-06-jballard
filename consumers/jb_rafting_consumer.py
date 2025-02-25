@@ -181,7 +181,17 @@ def plot_weekly_trend(df):
 
 def plot_guide_performance(df):
     guide_counts = df.groupby('guide')['is_negative'].value_counts().unstack().fillna(0)
-    guide_counts.columns = ['Positive', 'Negative']
+
+    # Ensure the correct column assignment based on actual data
+    if guide_counts.shape[1] == 2:
+        guide_counts.columns = ['Positive', 'Negative']
+    elif guide_counts.shape[1] == 1:
+        # Dynamically assign the correct column name
+        guide_counts.columns = ['Positive'] if 0 in guide_counts.columns else ['Negative']
+    else:
+        logging.warning("⚠️ No feedback data available for guides.")
+        return  # Avoid plotting if there's no data
+
     guide_counts.plot(kind='bar', stacked=True, ax=plt.gca())
     plt.title("Guide Performance (Positive vs Negative)")
     plt.xlabel("Guide")
