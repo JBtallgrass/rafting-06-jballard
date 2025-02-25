@@ -11,8 +11,7 @@ import matplotlib.pyplot as plt
 from matplotlib.animation import FuncAnimation
 import matplotlib
 matplotlib.use("TkAgg")
-import sys
-import pathlib
+
 
 # Logging
 import logging
@@ -24,7 +23,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(
 
 load_dotenv()
 
-KAFKA_BROKER = os.getenv("KAFKA_BROKER", "localhost:9092")
+KAFKA_BROKER = os.getenv("KAFKA_BROKER", "172.30.179.152:9092")
 KAFKA_TOPIC = os.getenv("RAFTING_TOPIC", "rafting_feedback")
 
 if not KAFKA_BROKER or not KAFKA_TOPIC:
@@ -168,7 +167,13 @@ def update_chart(frame):
 
 def plot_weekly_trend(df):
     weekly_counts = df.groupby('week')['is_negative'].value_counts().unstack().fillna(0)
-    weekly_counts.columns = ['Positive', 'Negative']
+
+    # Ensure correct column assignment based on actual data
+    if weekly_counts.shape[1] == 2:
+        weekly_counts.columns = ['Positive', 'Negative']
+    elif weekly_counts.shape[1] == 1:
+        weekly_counts.columns = ['Positive'] if 0 in weekly_counts.columns else ['Negative']
+
     weekly_counts.plot(kind='line', ax=plt.gca())
     plt.title("Weekly Feedback Trend")
     plt.xlabel("Week Number")

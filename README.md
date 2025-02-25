@@ -46,6 +46,9 @@ This project is designed to **stream, process, and analyze real-time customer fe
 ### ⚠️ Note: ⚠️
 The data in this project is **fictitious** with the use of  **Generative AI (GenAI)** assistants to **generate, problem-solve, and debug** the process.
 
+--- 
+### Project Findings [Rafting Project analysis](C:\Users\balla\Projects\rafting-06-jballard\docs\findings_rafting.md)
+
 ---
 
 ### 🎯 Goals  
@@ -190,6 +193,10 @@ Here’s the workflow for the project:
   Weather_JSON -->|Consumes & Visualizes|  --> wx_Consumer;
 
 ---
+### Module 7: Final consumer implementations
+[Final consumer modification](docs\mod7-final-consumer-update.md)
+
+---
 
 ## ⚠️ Important Notes
 
@@ -213,3 +220,6 @@ This project is licensed under the **MIT License**. You are encouraged to fork, 
 _Project completed Februray 16th 2025_
 ---
 
+
+
+[def]: docs\mod7-final-consumer-update.md
